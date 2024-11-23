@@ -1,13 +1,11 @@
-// Startowa pozycja drona
+// Startowa pozycja pierwszego drona
 var startLatLng = [54.35447938106172, 18.593549377990467];
-var currentLatLng = [...startLatLng]; // Kopia startowej pozycji
 
 // Parametry trajektorii
 var step = 0.0001; // Wielkość jednego kroku (stopni współrzędnych)
-var directions = ['north', 'east', 'south', 'east']; // Kolejne kierunki lotu
-var directionIndex = 0; // Indeks bieżącego kierunku
-var stepsPerSegment = 50; // Liczba kroków w jednym kierunku
-var currentStep = 0; // Licznik kroków w bieżącym segmencie
+var directions = ['north', 'east', 'south', 'west']; // Kolejne kierunki lotu
+var stepsPerSegment = 100; // Liczba kroków w jednym kierunku
+var totalStepsLimit = 150; // Limit kroków dla każdego drona
 
 // Flaga kontrolująca generowanie punktów heatmapy
 var isGeneratingHeatmap = true;
@@ -19,73 +17,99 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
     maxZoom: 18
 }).addTo(map);
 
-// Tworzenie markera drona
+// Tworzenie ikon dla dronów
 var droneIcon = L.icon({
     iconUrl: '../images/drone-icon.png', // Ikona drona
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16]
 });
-var droneMarker = L.marker(startLatLng, { icon: droneIcon }).addTo(map)
-    .bindPopup('Dron');
 
-// Okrąg widoczności drona
-var droneRange = L.circle(startLatLng, {
-    radius: 200,
-    color: 'blue',
-    fillColor: '#30a3ec',
-    fillOpacity: 0.3
-}).addTo(map);
+// Tworzenie tablicy dronów
+var drones = [
+    {
+        id: 1,
+        currentLatLng: [...startLatLng],
+        directionIndex: 0,
+        currentStep: 0,
+        totalSteps: 0,
+        marker: L.marker(startLatLng, { icon: droneIcon }).addTo(map).bindPopup('Dron 1'),
+        range: L.circle(startLatLng, { radius: 200, color: 'blue', fillColor: '#30a3ec', fillOpacity: 0.3 }).addTo(map)
+    },
+    {
+        id: 2,
+        currentLatLng: [startLatLng[0] + 0.0035, startLatLng[1] + 0.001],
+        directionIndex: 0,
+        currentStep: 0,
+        totalSteps: 0,
+        marker: L.marker([startLatLng[0] + 0.001, startLatLng[1] + 0.001], { icon: droneIcon }).addTo(map).bindPopup('Dron 2'),
+        range: L.circle([startLatLng[0] + 0.001, startLatLng[1] + 0.001], { radius: 200, color: 'green', fillColor: '#30a3ec', fillOpacity: 0.3 }).addTo(map)
+    },
+    {
+        id: 3,
+        currentLatLng: [startLatLng[0] - 0.0035, startLatLng[1] - 0.001],
+        directionIndex: 0,
+        currentStep: 0,
+        totalSteps: 0,
+        marker: L.marker([startLatLng[0] - 0.001, startLatLng[1] - 0.001], { icon: droneIcon }).addTo(map).bindPopup('Dron 3'),
+        range: L.circle([startLatLng[0] - 0.001, startLatLng[1] - 0.001], { radius: 200, color: 'red', fillColor: '#30a3ec', fillOpacity: 0.3 }).addTo(map)
+    }
+];
 
 // Heatmapa
 var heatData = [];
 var heatLayer = L.heatLayer(heatData, { radius: 15 }).addTo(map);
 
-// Funkcja aktualizacji pozycji drona
-function updateDronePosition() {
-    // Aktualizacja bieżącej pozycji w oparciu o kierunek
-    if (directions[directionIndex] === 'north') {
-        currentLatLng[0] += step; // Ruch na północ (zwiększ szerokość geograficzną)
-    } else if (directions[directionIndex] === 'east') {
-        currentLatLng[1] += step; // Ruch na wschód (zwiększ długość geograficzną)
-    } else if (directions[directionIndex] === 'south') {
-        currentLatLng[0] -= step; // Ruch na południe (zmniejsz szerokość geograficzną)
-    } else if (directions[directionIndex] === 'west') {
-        currentLatLng[1] -= step; // Ruch na zachód (zmniejsz długość geograficzną)
-    }
+// Funkcja aktualizacji pozycji dronów
+function updateDronesPosition() {
+    drones.forEach(drone => {
+        // Sprawdź, czy dron wykonał 300 kroków
+        if (drone.totalSteps >= totalStepsLimit) {
+            map.removeLayer(drone.marker); // Usuń marker drona z mapy
+            map.removeLayer(drone.range);  // Usuń okrąg widoczności
+            console.log(`Dron ${drone.id} zniknął po ${totalStepsLimit} krokach.`);
+            return;
+        }
 
-    // Aktualizuj pozycję markera i okręgu drona
-    droneMarker.setLatLng(currentLatLng);
-    droneRange.setLatLng(currentLatLng);
+        // Aktualizacja pozycji drona
+        if (directions[drone.directionIndex] === 'north') {
+            drone.currentLatLng[0] += step;
+        } else if (directions[drone.directionIndex] === 'east') {
+            drone.currentLatLng[1] += step;
+        } else if (directions[drone.directionIndex] === 'south') {
+            drone.currentLatLng[0] -= step;
+        } else if (directions[drone.directionIndex] === 'west') {
+            drone.currentLatLng[1] -= step;
+        }
 
-    // Generuj punkty do heatmapy tylko, jeśli `isGeneratingHeatmap` jest true
-    if (isGeneratingHeatmap) {
-        scanArea(currentLatLng);
-    }
+        // Aktualizuj marker i okrąg widoczności
+        drone.marker.setLatLng(drone.currentLatLng);
+        drone.range.setLatLng(drone.currentLatLng);
 
-    // Aktualizuj licznik kroków
-    currentStep++;
-    if (currentStep >= stepsPerSegment) {
-        currentStep = 0; // Zresetuj licznik kroków
-        directionIndex = (directionIndex + 1) % directions.length; // Przejdź do następnego kierunku
-    }
+        // Generuj punkty do heatmapy
+        if (isGeneratingHeatmap) {
+            scanArea(drone.currentLatLng);
+        }
+
+        // Aktualizuj licznik kroków
+        drone.currentStep++;
+        drone.totalSteps++;
+        if (drone.currentStep >= stepsPerSegment) {
+            drone.currentStep = 0;
+            drone.directionIndex = (drone.directionIndex + 1) % directions.length;
+        }
+    });
 
     // Wywołaj ponownie po krótkiej pauzie
-    setTimeout(updateDronePosition, 200); // Pauza 200 ms na krok
-}
-
-// Funkcja cyklicznie włączająca i wyłączająca generowanie heatmapy
-function toggleHeatmapGeneration() {
-    isGeneratingHeatmap = !isGeneratingHeatmap; // Zmień stan generowania heatmapy
-    setTimeout(toggleHeatmapGeneration, isGeneratingHeatmap ? 5000 : 3000); // 5 sekund aktywności, 3 sekundy przerwy
+    setTimeout(updateDronesPosition, 200); // 200 ms opóźnienia
 }
 
 // Funkcja symulująca skanowanie obszaru
 function scanArea(currentLatLng) {
     var detectionRadius = 0.002; // Promień skanowania (300 m)
     var isContaminated = Math.random() < 0.01; // 1% szansa na powstanie skażonego obszaru
-    var pointsCount = isContaminated ? 25 : 5; // Jeśli obszar jest skażony, generuj więcej punktów
-    var intensityMultiplier = isContaminated ? 5 : 2; // Wyższa intensywność dla skażonych obszarów
+    var pointsCount = isContaminated ? 5 : 3; // Jeśli obszar jest skażony, generuj więcej punktów
+    var intensityMultiplier = isContaminated ? 1 : 1; // Wyższa intensywność dla skażonych obszarów
 
     for (var i = 0; i < pointsCount; i++) {
         var angle = Math.random() * 2 * Math.PI; // Kąt losowy
@@ -105,7 +129,7 @@ function scanArea(currentLatLng) {
         heatData.push([...pointLatLng, intensity]);
 
         // Dodaj marker, jeśli intensywność przekracza próg
-        if (intensity > 4.5) { // Próg dużego natężenia
+        if (intensity > 4) {
             addHighIntensityMarker(pointLatLng, intensity);
         }
     }
@@ -125,12 +149,4 @@ function addHighIntensityMarker(latlng, intensity) {
 }
 
 // Rozpocznij cykliczne zarządzanie heatmapą
-toggleHeatmapGeneration();
-
-// Rozpocznij ruch drona
-updateDronePosition();
-
-// Obsługa kliknięcia na drona
-droneMarker.on('click', function() {
-    map.setView(droneMarker.getLatLng());
-});
+setTimeout(updateDronesPosition, 200);
